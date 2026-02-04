@@ -1,0 +1,21 @@
+name: Unity Activation (Generate ALF)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  activation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Unity activation file (ALF)
+        uses: game-ci/unity-activate@v2
+        with:
+          unityVersion: 2022.3.25f1
+
+      - name: Upload activation file
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnityActivation
+          path: Unity_v*.alf
