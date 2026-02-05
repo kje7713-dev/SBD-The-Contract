@@ -1,0 +1,42 @@
+name: TestFlight Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: 'Build notes'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          
+      - run: brew install xcodegen
+          
+      - name: Deploy
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_IDENTIFIER: ${{ secrets.APP_IDENTIFIER }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY: ${{ secrets.ASC_KEY }}
+          IOS_SCHEME: ${{ secrets.IOS_SCHEME }}
+          CI: true
+        run: bundle exec fastlane beta
+          
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-${{ github.run_number }}
+          path: build_artifacts/
