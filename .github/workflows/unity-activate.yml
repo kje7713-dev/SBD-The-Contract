@@ -1,12 +1,21 @@
 name: Unity Activation (Generate ALF)
 
-# IMPORTANT: This workflow is using a deprecated action (unity-request-activation-file).
-# For new projects, follow the manual activation process described at:
-# https://game.ci/docs/github/activation
+# IMPORTANT: This workflow uses a deprecated action (unity-request-activation-file).
+# - Deprecated: December 2023 (v2.2.0 onwards)
+# - This version (v2.1.0) is the last working version before deprecation
+# - Unity has deprecated manual activation for Personal licenses
+# - Recommended: Use manual local activation (see .github/UNITY_ACTIVATION.md)
 #
-# This workflow generates an activation file (.alf) that you can use to request
-# a Unity license file (.ulf) from https://license.unity3d.com/manual
+# Migration Path:
+# 1. Install Unity Hub locally
+# 2. Activate Unity with your license
+# 3. Extract the .ulf license file from your system
+# 4. Store it as UNITY_LICENSE secret in repository settings
+# 5. Remove this workflow file once all team members have migrated
 #
+# For new projects, follow: https://game.ci/docs/github/activation
+#
+# This workflow generates an activation file (.alf) for Unity license requests.
 # After running this workflow:
 # 1. Download the artifact from the workflow run
 # 2. Upload the .alf file to https://license.unity3d.com/manual
