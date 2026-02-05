@@ -1,40 +1,46 @@
 default_platform(:ios)
 
-# Custom workflow state tracker
-$workflow_state = {
-  phase: 'init',
-  artifacts: [],
-  config_map: {}
-}
-
-def record_phase(phase_name)
-  $workflow_state[:phase] = phase_name
-  UI.message("→ Phase: #{phase_name}")
-end
-
-def store_config(key_symbol, env_name)
-  value = ENV[env_name]
-  raise "Config #{env_name} missing" if value.to_s.strip.empty?
-  $workflow_state[:config_map][key_symbol] = value
-end
-
-def fetch_config(key_symbol)
-  $workflow_state[:config_map][key_symbol]
-end
-
-def track_temp_file(filepath)
-  $workflow_state[:artifacts] << filepath
-end
-
-def purge_tracked_files
-  $workflow_state[:artifacts].each { |f| File.delete(f) if File.exist?(f) }
+# Custom workflow state tracker using instance variables
+class WorkflowState
+  attr_accessor :phase, :artifacts, :config_map
+  
+  def initialize
+    @phase = 'init'
+    @artifacts = []
+    @config_map = {}
+  end
+  
+  def record_phase(phase_name)
+    @phase = phase_name
+    UI.message("→ Phase: #{phase_name}")
+  end
+  
+  def store_config(key_symbol, env_name)
+    value = ENV[env_name]
+    raise "Config #{env_name} missing" if value.to_s.strip.empty?
+    @config_map[key_symbol] = value
+  end
+  
+  def fetch_config(key_symbol)
+    @config_map[key_symbol]
+  end
+  
+  def track_temp_file(filepath)
+    @artifacts << filepath
+  end
+  
+  def purge_tracked_files
+    @artifacts.each { |f| File.delete(f) if File.exist?(f) }
+  end
 end
 
 platform :ios do
   
   lane :beta do
+    state = WorkflowState.new
+    
     begin
-      record_phase('validation')
+      state.record_phase('validation')
       
       # Load environment into state
       [
@@ -47,18 +53,18 @@ platform :ios do
         [:api_iss, 'ASC_ISSUER_ID'],
         [:api_pem, 'ASC_KEY'],
         [:scheme, 'IOS_SCHEME']
-      ].each { |sym, env| store_config(sym, env) }
+      ].each { |sym, env| state.store_config(sym, env) }
       
-      record_phase('project_gen')
+      state.record_phase('project_gen')
       sh("cd .. && xcodegen generate --spec project.yml")
       project_file = "TheContractApp.xcodeproj"
       
-      record_phase('keychain')
+      state.record_phase('keychain')
       if ENV['CI']
         chain_id = "ci_chain"
         create_keychain(
           name: chain_id,
-          password: fetch_config(:vault_pass),
+          password: state.fetch_config(:vault_pass),
           default_keychain: true,
           unlock: true,
           timeout: 3600,
@@ -66,43 +72,43 @@ platform :ios do
         )
       end
       
-      record_phase('api_auth')
-      raw_pem = fetch_config(:api_pem)
+      state.record_phase('api_auth')
+      raw_pem = state.fetch_config(:api_pem)
       decoded_pem = raw_pem.include?("BEGIN") ? raw_pem : Base64.decode64(raw_pem)
       
       pem_file = "/tmp/api_#{rand(99999)}.p8"
       File.write(pem_file, decoded_pem)
-      track_temp_file(pem_file)
+      state.track_temp_file(pem_file)
       
       api_conn = app_store_connect_api_key(
-        key_id: fetch_config(:api_kid),
-        issuer_id: fetch_config(:api_iss),
+        key_id: state.fetch_config(:api_kid),
+        issuer_id: state.fetch_config(:api_iss),
         key_filepath: pem_file,
         in_house: false
       )
       
-      record_phase('cert_fetch')
-      vault_auth = Base64.strict_encode64("x-access-token:#{fetch_config(:vault_key)}")
+      state.record_phase('cert_fetch')
+      vault_auth = Base64.strict_encode64("x-access-token:#{state.fetch_config(:vault_key)}")
       
       match(
         type: "appstore",
-        git_url: fetch_config(:vault),
+        git_url: state.fetch_config(:vault),
         git_basic_authorization: vault_auth,
-        app_identifier: fetch_config(:app),
-        team_id: fetch_config(:team),
+        app_identifier: state.fetch_config(:app),
+        team_id: state.fetch_config(:team),
         readonly: true
       )
       
-      record_phase('build_num')
+      state.record_phase('build_num')
       timestamp_version = Time.now.strftime("%Y%m%d%H%M")
       increment_build_number(
         build_number: timestamp_version,
         xcodeproj: project_file
       )
       
-      record_phase('compile')
+      state.record_phase('compile')
       gym(
-        scheme: fetch_config(:scheme),
+        scheme: state.fetch_config(:scheme),
         export_method: "app-store",
         output_directory: "./build_artifacts",
         output_name: "TheContract.ipa",
@@ -110,16 +116,16 @@ platform :ios do
         export_options: {
           method: "app-store",
           provisioningProfiles: {
-            fetch_config(:app) => "match AppStore #{fetch_config(:app)}"
+            state.fetch_config(:app) => "match AppStore #{state.fetch_config(:app)}"
           },
           signingStyle: "manual",
-          teamID: fetch_config(:team),
+          teamID: state.fetch_config(:team),
           uploadBitcode: false,
           uploadSymbols: true
         }
       )
       
-      record_phase('upload')
+      state.record_phase('upload')
       pilot(
         api_key: api_conn,
         skip_waiting_for_build_processing: true,
@@ -127,11 +133,11 @@ platform :ios do
         distribute_external: false
       )
       
-      record_phase('complete')
+      state.record_phase('complete')
       UI.success("Deployment successful")
       
     ensure
-      purge_tracked_files
+      state.purge_tracked_files
     end
   end
   
