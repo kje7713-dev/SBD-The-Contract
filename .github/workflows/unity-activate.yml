@@ -1,5 +1,18 @@
 name: Unity Activation (Generate ALF)
 
+# IMPORTANT: This workflow is using a deprecated action (unity-request-activation-file).
+# For new projects, follow the manual activation process described at:
+# https://game.ci/docs/github/activation
+#
+# This workflow generates an activation file (.alf) that you can use to request
+# a Unity license file (.ulf) from https://license.unity3d.com/manual
+#
+# After running this workflow:
+# 1. Download the artifact from the workflow run
+# 2. Upload the .alf file to https://license.unity3d.com/manual
+# 3. Download the returned .ulf file
+# 4. Store the .ulf file contents as a repository secret named UNITY_LICENSE
+
 on:
   workflow_dispatch:
 
@@ -7,15 +20,14 @@ jobs:
   activation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Generate Unity activation file (ALF)
-        uses: game-ci/unity-activate@v2
+      - name: Request manual activation file
+        id: getManualLicenseFile
+        uses: game-ci/unity-request-activation-file@v2.1.0
         with:
           unityVersion: 2022.3.25f1
 
       - name: Upload activation file
         uses: actions/upload-artifact@v4
         with:
-          name: UnityActivation
-          path: Unity_v*.alf
+          name: ${{ steps.getManualLicenseFile.outputs.filePath }}
+          path: ${{ steps.getManualLicenseFile.outputs.filePath }}
