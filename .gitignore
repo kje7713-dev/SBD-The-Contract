@@ -1,0 +1,32 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+.DS_Store
+
+# Build artifacts
+build/
+build_artifacts/
+*.ipa
+*.dSYM.zip
+*.app
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+*.p8
+
+# Ruby
+vendor/
+.bundle/
+Gemfile.lock
+
+# Temporary
+*.log
+.env
+ci_logs/
