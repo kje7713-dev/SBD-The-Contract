@@ -10,17 +10,17 @@ on:
 jobs:
   deploy:
     runs-on: macos-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-        
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
           bundler-cache: true
-          
+
       - run: brew install xcodegen
-          
+
       - name: Deploy
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -34,7 +34,7 @@ jobs:
           IOS_SCHEME: ${{ secrets.IOS_SCHEME }}
           CI: true
         run: bundle exec fastlane beta
-          
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
