@@ -1,0 +1,144 @@
+default_platform(:ios)
+
+# Custom workflow state tracker using instance variables
+class WorkflowState
+  attr_accessor :phase, :artifacts, :config_map
+  
+  def initialize
+    @phase = 'init'
+    @artifacts = []
+    @config_map = {}
+  end
+  
+  def record_phase(phase_name)
+    @phase = phase_name
+    UI.message("→ Phase: #{phase_name}")
+  end
+  
+  def store_config(key_symbol, env_name)
+    value = ENV[env_name]
+    raise "Config #{env_name} missing" if value.to_s.strip.empty?
+    @config_map[key_symbol] = value
+  end
+  
+  def fetch_config(key_symbol)
+    @config_map[key_symbol]
+  end
+  
+  def track_temp_file(filepath)
+    @artifacts << filepath
+  end
+  
+  def purge_tracked_files
+    @artifacts.each { |f| File.delete(f) if File.exist?(f) }
+  end
+end
+
+platform :ios do
+  
+  lane :beta do
+    state = WorkflowState.new
+    
+    begin
+      state.record_phase('validation')
+      
+      # Load environment into state
+      [
+        [:team, 'APPLE_TEAM_ID'],
+        [:app, 'APP_IDENTIFIER'],
+        [:vault, 'MATCH_GIT_URL'],
+        [:vault_key, 'MATCH_GIT_TOKEN'],
+        [:vault_pass, 'MATCH_PASSWORD'],
+        [:api_kid, 'ASC_KEY_ID'],
+        [:api_iss, 'ASC_ISSUER_ID'],
+        [:api_pem, 'ASC_KEY'],
+        [:scheme, 'IOS_SCHEME']
+      ].each { |sym, env| state.store_config(sym, env) }
+      
+      state.record_phase('project_gen')
+      sh("cd .. && xcodegen generate --spec project.yml")
+      project_file = "TheContractApp.xcodeproj"
+      
+      state.record_phase('keychain')
+      if ENV['CI']
+        chain_id = "ci_chain"
+        create_keychain(
+          name: chain_id,
+          password: state.fetch_config(:vault_pass),
+          default_keychain: true,
+          unlock: true,
+          timeout: 3600,
+          lock_when_sleeps: false
+        )
+      end
+      
+      state.record_phase('api_auth')
+      raw_pem = state.fetch_config(:api_pem)
+      decoded_pem = raw_pem.include?("BEGIN") ? raw_pem : Base64.decode64(raw_pem)
+      
+      pem_file = "/tmp/api_#{rand(99999)}.p8"
+      File.write(pem_file, decoded_pem)
+      state.track_temp_file(pem_file)
+      
+      api_conn = app_store_connect_api_key(
+        key_id: state.fetch_config(:api_kid),
+        issuer_id: state.fetch_config(:api_iss),
+        key_filepath: pem_file,
+        in_house: false
+      )
+      
+      state.record_phase('cert_fetch')
+      vault_auth = Base64.strict_encode64("x-access-token:#{state.fetch_config(:vault_key)}")
+      
+      match(
+        type: "appstore",
+        git_url: state.fetch_config(:vault),
+        git_basic_authorization: vault_auth,
+        app_identifier: state.fetch_config(:app),
+        team_id: state.fetch_config(:team),
+        readonly: true
+      )
+      
+      state.record_phase('build_num')
+      timestamp_version = Time.now.strftime("%Y%m%d%H%M")
+      increment_build_number(
+        build_number: timestamp_version,
+        xcodeproj: project_file
+      )
+      
+      state.record_phase('compile')
+      gym(
+        scheme: state.fetch_config(:scheme),
+        export_method: "app-store",
+        output_directory: "./build_artifacts",
+        output_name: "TheContract.ipa",
+        clean: true,
+        export_options: {
+          method: "app-store",
+          provisioningProfiles: {
+            state.fetch_config(:app) => "match AppStore #{state.fetch_config(:app)}"
+          },
+          signingStyle: "manual",
+          teamID: state.fetch_config(:team),
+          uploadBitcode: false,
+          uploadSymbols: true
+        }
+      )
+      
+      state.record_phase('upload')
+      pilot(
+        api_key: api_conn,
+        skip_waiting_for_build_processing: true,
+        ipa: "./build_artifacts/TheContract.ipa",
+        distribute_external: false
+      )
+      
+      state.record_phase('complete')
+      UI.success("Deployment successful")
+      
+    ensure
+      state.purge_tracked_files
+    end
+  end
+  
+end
